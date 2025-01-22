@@ -33,6 +33,7 @@ export class KeyvSqlite extends EventEmitter implements KeyvStoreAdapter {
   updateCatches: (args: [string, unknown][], ttl?: number) => void;
   emptyCaches: () => void;
   findCaches: (namespace: string | undefined, limit: number, offset: number, expiredAt: number) => CacheObject[];
+  findKeys: (pattern: string | undefined, limit: number, offset: number, expiredAt: number) => CacheObject[];
 
   constructor(options?: KeyvSqliteOptions) {
     super();
@@ -71,6 +72,9 @@ CREATE INDEX IF NOT EXISTS idx_expired_caches ON ${tableName}(expiredAt);
     );
     const finderStatement = this.sqlite.prepare<[string, number, number, number], CacheObject>(
       `SELECT * FROM ${tableName} WHERE cacheKey LIKE ? AND (expiredAt = -1 OR expiredAt > ?) LIMIT ? OFFSET ?`,
+    );
+    const findKeysStatement = this.sqlite.prepare<[string, number, number, number], CacheObject>(
+      `SELECT cacheKey FROM ${tableName} WHERE cacheKey LIKE ? AND (expiredAt = -1 OR expiredAt > ?) LIMIT ? OFFSET ?`,
     );
     const purgeStatement = this.sqlite.prepare(`DELETE FROM ${tableName} WHERE expiredAt != -1 AND expiredAt < ?`);
     const emptyStatement = this.sqlite.prepare(`DELETE FROM ${tableName} WHERE cacheKey LIKE ?`);
@@ -140,6 +144,13 @@ CREATE INDEX IF NOT EXISTS idx_expired_caches ON ${tableName}(expiredAt);
         .all(`${namespace ? `${namespace}:` : ""}%`, expiredAt, limit, offset)
         .filter((data) => data !== undefined);
     };
+
+    this.findKeys = (pattern, limit, offset, expiredAt) => {
+      const _pattern = pattern?.replaceAll("*", "%") ?? ""
+      return findKeysStatement
+        .all(_pattern ? `%${pattern}%` : '%', expiredAt, limit, offset)
+        .filter((data) => data !== undefined);
+    };
   }
 
   async get<Value>(key: string): Promise<StoredData<Value> | undefined> {
@@ -206,6 +217,31 @@ CREATE INDEX IF NOT EXISTS idx_expired_caches ON ${tableName}(expiredAt);
         // biome-ignore lint: <explanation>
         offset += 1;
         yield [entry.cacheKey, entry.cacheData];
+      }
+
+      yield* iterate(offset);
+    };
+
+    yield* iterate(0);
+  }
+
+  async *keys(pattern?: string) {
+    const limit = Number.parseInt(this.opts.iterationLimit! as string, 10) || 10;
+    const time = now();
+    const find = this.findKeys;
+
+    // @ts-expect-error - iterate
+    const iterate = async function* (offset: number) {
+      const entries = find(pattern, limit, offset, time);
+
+      if (entries.length === 0) {
+        return;
+      }
+
+      for (const entry of entries) {
+        // biome-ignore lint: <explanation>
+        offset += 1;
+        yield entry.cacheKey;
       }
 
       yield* iterate(offset);
