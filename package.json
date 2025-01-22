@@ -15,7 +15,9 @@
     "build": "tsup",
     "bench": "vitest bench",
     "test": "vitest --ui",
-    "check": "biome check --write ./src"
+    "check": "biome check --write ./src",
+    "prepare": "npm run-script build",
+    "prepublishOnly": "npm run build"
   },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",

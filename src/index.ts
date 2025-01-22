@@ -33,6 +33,7 @@ export class KeyvSqlite extends EventEmitter implements KeyvStoreAdapter {
   updateCatches: (args: [string, unknown][], ttl?: number) => void;
   emptyCaches: () => void;
   findCaches: (namespace: string | undefined, limit: number, offset: number, expiredAt: number) => CacheObject[];
+  findKeys: (pattern: string | undefined, expiredAt: number) => {cacheKey: string}[];
 
   constructor(options?: KeyvSqliteOptions) {
     super();
@@ -71,6 +72,9 @@ CREATE INDEX IF NOT EXISTS idx_expired_caches ON ${tableName}(expiredAt);
     );
     const finderStatement = this.sqlite.prepare<[string, number, number, number], CacheObject>(
       `SELECT * FROM ${tableName} WHERE cacheKey LIKE ? AND (expiredAt = -1 OR expiredAt > ?) LIMIT ? OFFSET ?`,
+    );
+    const findKeysStatement = this.sqlite.prepare<[string, number], {cacheKey: string}>(
+      `SELECT cacheKey FROM ${tableName} WHERE cacheKey LIKE ? AND (expiredAt = -1 OR expiredAt > ?)`,
     );
     const purgeStatement = this.sqlite.prepare(`DELETE FROM ${tableName} WHERE expiredAt != -1 AND expiredAt < ?`);
     const emptyStatement = this.sqlite.prepare(`DELETE FROM ${tableName} WHERE cacheKey LIKE ?`);
@@ -138,6 +142,13 @@ CREATE INDEX IF NOT EXISTS idx_expired_caches ON ${tableName}(expiredAt);
     this.findCaches = (namespace, limit, offset, expiredAt) => {
       return finderStatement
         .all(`${namespace ? `${namespace}:` : ""}%`, expiredAt, limit, offset)
+        .filter((data) => data !== undefined);
+    };
+
+    this.findKeys = (pattern, expiredAt) => {
+      const _pattern = pattern?.replaceAll("*", "%") ?? ""
+      return findKeysStatement
+        .all(_pattern ? `%${_pattern}%` : '%', expiredAt)
         .filter((data) => data !== undefined);
     };
   }
@@ -212,6 +223,12 @@ CREATE INDEX IF NOT EXISTS idx_expired_caches ON ${tableName}(expiredAt);
     };
 
     yield* iterate(0);
+  }
+
+  async keys(pattern?: string): Promise<string[]> {
+    const time = now();
+    const entries = this.findKeys(pattern, time)
+    return entries.map((entry) => entry.cacheKey);
   }
 
   async disconnect() {
