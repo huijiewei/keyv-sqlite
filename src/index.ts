@@ -148,7 +148,7 @@ CREATE INDEX IF NOT EXISTS idx_expired_caches ON ${tableName}(expiredAt);
     this.findKeys = (pattern, expiredAt) => {
       const _pattern = pattern?.replaceAll("*", "%") ?? ""
       return findKeysStatement
-        .all(_pattern ? `%${pattern}%` : '%', expiredAt)
+        .all(_pattern ? `%${_pattern}%` : '%', expiredAt)
         .filter((data) => data !== undefined);
     };
   }
