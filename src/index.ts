@@ -33,7 +33,7 @@ export class KeyvSqlite extends EventEmitter implements KeyvStoreAdapter {
   updateCatches: (args: [string, unknown][], ttl?: number) => void;
   emptyCaches: () => void;
   findCaches: (namespace: string | undefined, limit: number, offset: number, expiredAt: number) => CacheObject[];
-  findKeys: (pattern: string | undefined, limit: number, offset: number, expiredAt: number) => CacheObject[];
+  findKeys: (pattern: string | undefined, expiredAt: number) => {cacheKey: string}[];
 
   constructor(options?: KeyvSqliteOptions) {
     super();
@@ -73,8 +73,8 @@ CREATE INDEX IF NOT EXISTS idx_expired_caches ON ${tableName}(expiredAt);
     const finderStatement = this.sqlite.prepare<[string, number, number, number], CacheObject>(
       `SELECT * FROM ${tableName} WHERE cacheKey LIKE ? AND (expiredAt = -1 OR expiredAt > ?) LIMIT ? OFFSET ?`,
     );
-    const findKeysStatement = this.sqlite.prepare<[string, number, number, number], CacheObject>(
-      `SELECT cacheKey FROM ${tableName} WHERE cacheKey LIKE ? AND (expiredAt = -1 OR expiredAt > ?) LIMIT ? OFFSET ?`,
+    const findKeysStatement = this.sqlite.prepare<[string, number], {cacheKey: string}>(
+      `SELECT cacheKey FROM ${tableName} WHERE cacheKey LIKE ? AND (expiredAt = -1 OR expiredAt > ?)`,
     );
     const purgeStatement = this.sqlite.prepare(`DELETE FROM ${tableName} WHERE expiredAt != -1 AND expiredAt < ?`);
     const emptyStatement = this.sqlite.prepare(`DELETE FROM ${tableName} WHERE cacheKey LIKE ?`);
@@ -145,10 +145,10 @@ CREATE INDEX IF NOT EXISTS idx_expired_caches ON ${tableName}(expiredAt);
         .filter((data) => data !== undefined);
     };
 
-    this.findKeys = (pattern, limit, offset, expiredAt) => {
+    this.findKeys = (pattern, expiredAt) => {
       const _pattern = pattern?.replaceAll("*", "%") ?? ""
       return findKeysStatement
-        .all(_pattern ? `%${pattern}%` : '%', expiredAt, limit, offset)
+        .all(_pattern ? `%${pattern}%` : '%', expiredAt)
         .filter((data) => data !== undefined);
     };
   }
@@ -225,29 +225,10 @@ CREATE INDEX IF NOT EXISTS idx_expired_caches ON ${tableName}(expiredAt);
     yield* iterate(0);
   }
 
-  async *keys(pattern?: string) {
-    const limit = Number.parseInt(this.opts.iterationLimit! as string, 10) || 10;
+  async keys(pattern?: string): Promise<string[]> {
     const time = now();
-    const find = this.findKeys;
-
-    // @ts-expect-error - iterate
-    const iterate = async function* (offset: number) {
-      const entries = find(pattern, limit, offset, time);
-
-      if (entries.length === 0) {
-        return;
-      }
-
-      for (const entry of entries) {
-        // biome-ignore lint: <explanation>
-        offset += 1;
-        yield entry.cacheKey;
-      }
-
-      yield* iterate(offset);
-    };
-
-    yield* iterate(0);
+    const entries = this.findKeys(pattern, time)
+    return entries.map((entry) => entry.cacheKey);
   }
 
   async disconnect() {

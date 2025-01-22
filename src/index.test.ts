@@ -53,9 +53,9 @@ test.it("Async Iterator single element test", async (t) => {
 
 test.it("Async Keys single element test", async (t) => {
   await sqliteKeyv.set("foo", "bar");
-  const keys = sqliteKeyv.keys();
+  const keys = await sqliteKeyv.keys();
 
-  for await (const key of keys) {
+  for (const key of keys) {
     t.expect(key).toBe("foo");
   }
 });
@@ -85,9 +85,9 @@ test.it("Async Keys multiple element test", async (t) => {
   await sqliteKeyv.set("foo2", "bar2");
 
   const expectedKeys = ["foo", "foo1", "foo2"];
-  const keys = sqliteKeyv.keys();
+  const keys = await sqliteKeyv.keys();
   let i = 0;
-  for await (const key of keys) {
+  for (const key of keys) {
     const expectedKey = expectedKeys[i++];
     t.expect(key).toBe(expectedKey);
   }
@@ -116,16 +116,8 @@ test.it("Async Keys multiple elements with limit=1 test", async (t) => {
   await sqliteKeyv.set("foo", "bar");
   await sqliteKeyv.set("foo1", "bar1");
   await sqliteKeyv.set("foo2", "bar2");
-  const keys = sqliteKeyv.keys();
-  let key = await keys.next();
-  let k = key.value
-  t.expect(k).toBe("foo");
-  key = await keys.next();
-  k = key.value
-  t.expect(k).toBe("foo1");
-  key = await keys.next();
-  k = key.value
-  t.expect(k).toBe("foo2");
+  const keys = await sqliteKeyv.keys();
+  t.expect(keys).toStrictEqual(["foo", "foo1", "foo2"]);
 });
 
 test.it("Async Iterator 0 element test", async (t) => {
@@ -135,9 +127,8 @@ test.it("Async Iterator 0 element test", async (t) => {
 });
 
 test.it("Async Keys 0 element test", async (t) => {
-  const keys = sqliteKeyv.keys("keyv");
-  const key = await keys.next();
-  t.expect(key.value).toBe(undefined);
+  const keys = await sqliteKeyv.keys("keyv");
+  t.expect(keys.length).toBe(0);
 });
 
 test.it("Async Keys with pattern test", async (t) => {
@@ -146,7 +137,7 @@ test.it("Async Keys with pattern test", async (t) => {
   await sqliteKeyv.set("foo2", "bar1");
   await sqliteKeyv.set("foo3", "bar2");
 
-  for await (const key of sqliteKeyv.keys("foo*")) {
+  for (const key of await sqliteKeyv.keys("foo*")) {
     t.expect(key).not.toBe("other");
   }
 });
